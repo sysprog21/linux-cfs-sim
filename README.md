@@ -26,3 +26,8 @@ simulator by setting `running` = 0.
 
 ### Slow down the print out
 You can slow down the printing by adjusting the macro `sleep_time`.
+
+## License
+
+`linux-cfs-sim` is released under the MIT License. Use of this source code is
+governed by a MIT-style license that can be found in the LICENSE file.
