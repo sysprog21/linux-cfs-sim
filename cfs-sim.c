@@ -9,11 +9,13 @@
 #define PROCESS_FILE "processes.txt"
 #define NUM_CPU 4   /* number of CPUs or consumers */
 #define NUM_QUEUE 3 /* number of RQs */
-#define wait_time                                               \
-    1200 /* 1200 ms a process wait for I/O operation (or event) \
-          */
+
+/* 1200 ms a process wait for I/O operation (or event) */
+#define wait_time 1200
+
 /* 1 second artificial sleep time to make output readable */
 #define sleep_time 1000
+
 #define mili_to_micro 1000 /* convert milisecond to microsecond */
 #define MAX_SLEEP_AVG 10   /* maximum sleep average time */
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -177,14 +179,16 @@ void *producer(void *arg)
         process.time_slice = 0;
         process.accu_time_slice = 0;
         process.sleep_avg = 0;
+
         /* find an available CPU to assign the process into */
         do {
             srand(time(NULL));  /* seed the random generator */
             CPU = (rand() % 4); /* generate a random CPU number 0 - 3 */
         } while (p_count[CPU] >= b_value);
+        /* assign the process into the CPU queue */
         process.last_cpu = CPU;
-        /* assign the process into the CPU queue
-         * process is SCHED_NORMAL then store in RQ1
+
+        /* If process is SCHED_NORMAL, then store in RQ1.
          */
         if (process.sched == NORMAL) {
             pthread_mutex_lock(&QM[CPU][1]);
@@ -212,13 +216,15 @@ struct process_t ltop(char *line)
     char *token;
     char delimiter[] = " ,";
     token = strtok(line, delimiter); /* extract the SCHED info */
+
     /* transfer SCHED string into process.sched */
     if (strcmp(token, sched_to_string[RR]) == 0)
         process.sched = RR; /* Round-Robin */
     if (strcmp(token, sched_to_string[FIFO]) == 0)
         process.sched = FIFO; /* FIFO */
     if (strcmp(token, sched_to_string[NORMAL]) == 0)
-        process.sched = NORMAL;      /* normal */
+        process.sched = NORMAL; /* normal */
+
     token = strtok(NULL, delimiter); /* extract the static_prio */
     process.static_prio = atoi(token);
     token = strtok(NULL, delimiter); /* extract the execution time */
@@ -232,6 +238,7 @@ void process_status(void)
     struct process_t process;
     struct queue_t queue;
     struct queue_t RQ_snapshot[NUM_CPU][NUM_QUEUE];
+
     /* take a snapshot of the queues */
     memcpy(&RQ_snapshot, &RQ, sizeof(RQ));
     printf("%-3s | %-12s | %-3s | %-8s | %-11s | %-4s | %-9s \n", "PID",
@@ -262,12 +269,12 @@ void *consumer(void *arg)
     printf("[CPU %i]: CPU %i thread has been created.\n", CPU, CPU);
     while (running) {
         for (int i = 0; i < NUM_QUEUE; i++) { /* go through each queue */
-            while (running) { /* continuously executes processes in the queue */
+            while (running) { /* continuously executes processes in queue */
                 /* take a process out of the queue */
                 pthread_mutex_lock(&QM[CPU][i]);
                 process = take(&RQ[CPU][i]);
                 pthread_mutex_unlock(&QM[CPU][i]);
-                /* go to next queue if there is no more process on the queue*/
+                /* go to next queue if there is no more process in queue */
                 if (!process)
                     break;
 
@@ -276,6 +283,7 @@ void *consumer(void *arg)
                     "[CPU %d]: process PID %d is selected,%s, priority = %d.\n",
                     CPU, process->pid, sched_to_string[process->sched],
                     process->prio);
+
                 /* execute the process based on its scheduling schem */
                 switch (process->sched) {
                 case FIFO:
@@ -323,6 +331,7 @@ static void execute_RR(int CPU, struct process_t *process)
     int remaining_exec_time;
     printf("[CPU %d]: executing process PID %d, %s.\n", CPU, process->pid,
            sched_to_string[process->sched]);
+
     /* Calculate time quantum for the process */
     if (process->prio < 120)
         process->time_slice = (140 - process->prio) * 20;
@@ -331,8 +340,10 @@ static void execute_RR(int CPU, struct process_t *process)
 
     /* Calculate the remaining execution time of the process */
     remaining_exec_time = process->exec_time - process->accu_time_slice;
+
     /* Accumulate time_slice */
     process->accu_time_slice += process->time_slice;
+
     /* execute process */
     if (remaining_exec_time > process->time_slice) {
         usleep((process->time_slice + sleep_time) * mili_to_micro);
@@ -366,42 +377,54 @@ static void execute_NORMAL(int CPU, struct process_t *process)
     deltaT = (t2.tv_sec - t1.tv_sec) * 1000 + (t2.tv_usec - t1.tv_usec) / 1000;
     ticks = deltaT / 200;
     ticks = (ticks < MAX_SLEEP_AVG) ? ticks : MAX_SLEEP_AVG;
+
     /* add tick to the sleep_avg */
     process->sleep_avg += ticks;
     process->sleep_avg = (process->sleep_avg < MAX_SLEEP_AVG)
                              ? process->sleep_avg
                              : MAX_SLEEP_AVG;
+
     /* Calculate the dynamic priority */
     process->prio = MAX(100, MIN(process->prio - process->sleep_avg + 5, 139));
+
     /* Calculate time quantum for the process */
     if (process->prio < 120)
         process->time_slice = (140 - process->prio) * 20;
     else
         process->time_slice = (140 - process->prio) * 5;
+
     /* Calculate the remaining execution time of the process */
     remaining_exec_time = process->exec_time - process->accu_time_slice;
+
     /* Accumulate time_slice */
     process->accu_time_slice += process->time_slice;
+
     /* service_time is between 10 ms and time_slice */
     srand(time(NULL));  // seed the random generator
     service_time = 10 + (rand() % (process->time_slice - 9));
+
     /* execute process */
     printf("[CPU %d]: executing process PID %d, %s, service_time = %d.\n", CPU,
            process->pid, sched_to_string[process->sched], service_time);
     if (remaining_exec_time > service_time) {
         /* Record the time before executing the process */
         gettimeofday(&t1, NULL);
+
         /* execute the process */
         usleep((service_time + sleep_time) * mili_to_micro);
+
         /* Record the time after executing the process */
         gettimeofday(&t2, NULL);
+
         /* Record the last_run */
         process->last_run = t2;
+
         /* Calculate the execution time */
         deltaT =
             (t2.tv_sec - t1.tv_sec) * 1000 + (t2.tv_usec - t1.tv_usec) / 1000;
         deltaT = deltaT - sleep_time;  // substract the artificial sleep_time
         ticks = deltaT / 100;
+
         /* Substract the ticks from sleep_avg */
         process->sleep_avg = process->sleep_avg - ticks;
         if (service_time <
@@ -415,6 +438,7 @@ static void execute_NORMAL(int CPU, struct process_t *process)
             "[CPU %d]: process PID %d is preempted. Remaining execution time = "
             "%d.\n",
             CPU, process->pid, process->exec_time - process->accu_time_slice);
+
         /* Put back the process into the queue */
         if (process->prio < 130) { /* if prio < 130, process go to queue 1 */
             pthread_mutex_lock(&QM[CPU][1]);
@@ -439,7 +463,6 @@ static void execute_NORMAL(int CPU, struct process_t *process)
 void *balancer(void *arg)
 {
     struct process_t *process;
-    int new_cpu, i, j;
     int current_queue;
     printf("[balancer]: Balancer has been created.\n");
     while (running) {
@@ -449,18 +472,21 @@ void *balancer(void *arg)
             running = 0;
             break;
         }
+
         /* update the b_value */
         /* b_value is the number of processes each CPU should have so that
         ** processes are distributed equally to all CPUs */
         b_value = n_process / NUM_CPU;
-        for (i = 0; i < NUM_CPU; i++) {
+        for (int i = 0; i < NUM_CPU; i++) {
             while (p_count[i] > b_value) { /* more than b_value processes */
                 /* take out one process from the CPU's queue */
                 process = NULL;
+                int j = 0;
                 for (j = NUM_QUEUE - 1; j >= 0; j--) {
                     pthread_mutex_lock(&QM[i][j]);
                     process = take(&RQ[i][j]);
                     pthread_mutex_unlock(&QM[i][j]);
+
                     /* update p_count */
                     p_count[i]--;
                     if (process) {
@@ -486,14 +512,17 @@ void *balancer(void *arg)
                     p_count[i]++;
                     break;
                 }
+
                 /* found a new cpu for process */
-                new_cpu = j;
+                int new_cpu = j;
+
                 /* update process info */
                 process->last_cpu = i;
                 printf(
                     "[Balancer]: process PID %d is moved from CPU %d to CPU "
                     "%d.\n",
                     process->pid, i, j);
+
                 /* add process into new cpu's queue
                  * process is SCHED_NORMAL then store in RQ1
                  */
