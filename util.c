@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include "util.h"
 
 /* Initialize the process queue before using */
