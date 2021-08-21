@@ -209,7 +209,7 @@ static void execute_RR(int CPU, struct process_t *proc)
     printf("[CPU %d]: executing PID %d, %s.\n", CPU, proc->pid,
            sched_to_str[proc->sched]);
 
-    /* Calculate time quantum for the process */
+    /* Calculate timeslice for the process */
     if (proc->prio < 120)
         proc->time_slice = (140 - proc->prio) * 20;
     else
@@ -265,7 +265,7 @@ static void execute_NORMAL(int CPU, struct process_t *proc)
     /* Calculate the dynamic priority */
     proc->prio = MAX(100, MIN(proc->prio - proc->sleep_avg + 5, 139));
 
-    /* Calculate time quantum for the process */
+    /* Calculate timeslice for the process */
     if (proc->prio < 120)
         proc->time_slice = (140 - proc->prio) * 20;
     else
