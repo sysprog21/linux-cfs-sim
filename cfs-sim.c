@@ -52,23 +52,23 @@ static int n_process;      /* total # of proc still in the ready queue */
 static int b_value; /* # of proc each CPU should have in their ready queue */
 static bool running = true; /* indicate if the simulator is still running */
 
-/* Convert a process information string into a process struct.
+/* Parse process description and convert into a process context.
  * @param string containing the process info
  * @return process_t containing process info extracted from the string
  */
-static struct process_t ltop(char *line)
+static struct process_t desc2proc(char *line)
 {
     struct process_t proc;
     char delimiter[] = " ,";
     char *token = strtok(line, delimiter); /* extract the SCHED info */
 
-    /* transfer SCHED string into process.sched */
     if (!strcmp(token, sched_to_str[RR]))
         proc.sched = RR; /* Round-Robin */
-    if (!strcmp(token, sched_to_str[FIFO]))
+    else if (!strcmp(token, sched_to_str[FIFO]))
         proc.sched = FIFO; /* FIFO */
-    if (!strcmp(token, sched_to_str[NORMAL]))
+    else if (!strcmp(token, sched_to_str[NORMAL]))
         proc.sched = NORMAL; /* normal */
+    /* FIXME: deal with malformed inputs */
 
     token = strtok(NULL, delimiter); /* extract the static_prio */
     proc.static_prio = atoi(token);
@@ -153,8 +153,9 @@ void *producer(void *arg)
         if (!fgets(line, 100, file)) /* reach EOF */
             break;
 
-        struct process_t proc = ltop(line); /* convert string into process */
-        proc.pid = count++;                 /* assign pid to process */
+        struct process_t proc =
+            desc2proc(line); /* convert string into process */
+        proc.pid = count++;  /* assign pid to process */
         proc.prio = proc.static_prio;
         proc.time_slice = 0;
         proc.accu_time_slice = 0;
@@ -251,7 +252,8 @@ static void execute_NORMAL(int CPU, struct process_t *proc)
     /* Calculate the time ticks */
     t1 = proc->last_run;
     gettimeofday(&t2, NULL);
-    int deltaT = (t2.tv_sec - t1.tv_sec) * 1000 + (t2.tv_usec - t1.tv_usec) / 1000;
+    int deltaT =
+        (t2.tv_sec - t1.tv_sec) * 1000 + (t2.tv_usec - t1.tv_usec) / 1000;
     int ticks = deltaT / 200;
     ticks = (ticks < MAX_SLEEP_AVG) ? ticks : MAX_SLEEP_AVG;
 
