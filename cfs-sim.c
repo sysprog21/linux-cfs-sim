@@ -4,11 +4,17 @@
  *   - A balancer thread balances the process queues among 4 consumers
  */
 
-#include <sys/time.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
 #include "util.h"
+
 #define PROCESS_FILE "processes.txt"
-#define NUM_CPU 4   /* number of CPUs or consumers */
-#define NUM_QUEUE 3 /* number of RQs */
+#define N_CPU 4   /* number of CPUs or consumers */
+#define N_QUEUE 3 /* number of RQs */
 
 /* 1200 ms a process wait for I/O operation (or event) */
 #define wait_time 1200
@@ -18,9 +24,10 @@
 
 #define mili_to_micro 1000 /* convert milisecond to microsecond */
 #define MAX_SLEEP_AVG 10   /* maximum sleep average time */
+#define b_freq 2           /* frequency of the balancer */
+
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
-#define b_freq 2 /* frequency of the balancer */
 
 /* Create a global table of run queues where:
  *   - Row number is CPU number
@@ -34,17 +41,17 @@
  *
  * E.g., RQ[0,1] -> RQ1 of CPU0
  */
-struct queue_t RQ[NUM_CPU][NUM_QUEUE];
-pthread_mutex_t QM[NUM_CPU][NUM_QUEUE]; /* mutex for each queue */
+struct queue_t RQ[N_CPU][N_QUEUE];
+pthread_mutex_t QM[N_CPU][N_QUEUE]; /* mutex for each queue */
 
 /* string representation of scheduling policy */
 const char *sched_to_string[] = {"SCHED_RR", "SCHED_FIFO", "SCHED_NORMAL"};
 
-int p_count[NUM_CPU]; /* number of processes each CPU has */
-int n_process;        /* total number of processes still in the ready queue */
+int p_count[N_CPU]; /* number of processes each CPU has */
+int n_process;      /* total number of processes still in the ready queue */
 int b_value; /* number of processes each CPU should have in their ready queue */
 int running = 1; /* indicate that the emulator is still running */
-int cpu_count[NUM_CPU];
+int cpu_count[N_CPU];
 
 /** producer thread **/
 void *producer(void *arg);
@@ -63,7 +70,7 @@ void *balancer(void *arg);
 int main(int argc, char const *argv[])
 {
     pthread_t producer_thread, balancer_thread;
-    pthread_t consumer_thread[NUM_CPU];
+    pthread_t consumer_thread[N_CPU];
     pthread_attr_t thread_attr;
 
     /* trigger producer thread to create 20 processes in the queue */
@@ -100,7 +107,7 @@ int main(int argc, char const *argv[])
     }
 
     /* create 4 CPU threads */
-    for (int i = 0; i < NUM_CPU; i++) {
+    for (int i = 0; i < N_CPU; i++) {
         cpu_count[i] = i;
         res = pthread_create(&consumer_thread[i], &thread_attr, consumer,
                              (void *) &cpu_count[i]);
@@ -139,7 +146,7 @@ void *producer(void *arg)
     /* Read the number of processes in the file */
     fgets(line, 100, file);
     n_process = atoi(line);
-    if (n_process % NUM_CPU != 0) {
+    if (n_process % N_CPU != 0) {
         fprintf(stderr,
                 "[Producer]: Initial number of processes is invalid.\n");
         exit(EXIT_FAILURE);
@@ -147,17 +154,17 @@ void *producer(void *arg)
         /* b_value is the number of processes each CPU should has so that
          * all CPUs has the same number of processes
          */
-        b_value = n_process / NUM_CPU;
+        b_value = n_process / N_CPU;
     }
 
     /* Initially, each CPU has 0 process in the queue */
-    for (int i = 0; i < NUM_CPU; i++) {
+    for (int i = 0; i < N_CPU; i++) {
         p_count[i] = 0;
     }
 
     /* Initialize the queue for each CPU */
-    for (int i = 0; i < NUM_CPU; i++) {
-        for (int j = 0; j < NUM_QUEUE; j++) {
+    for (int i = 0; i < N_CPU; i++) {
+        for (int j = 0; j < N_QUEUE; j++) {
             init_queue(&RQ[i][j]);  // init queue
             /* initialize queue mutex */
             res = pthread_mutex_init(&QM[i][j], NULL);
@@ -237,15 +244,15 @@ void process_status(void)
 {
     struct process_t process;
     struct queue_t queue;
-    struct queue_t RQ_snapshot[NUM_CPU][NUM_QUEUE];
+    struct queue_t RQ_snapshot[N_CPU][N_QUEUE];
 
     /* take a snapshot of the queues */
     memcpy(&RQ_snapshot, &RQ, sizeof(RQ));
     printf("%-3s | %-12s | %-3s | %-8s | %-11s | %-4s | %-9s \n", "PID",
            "SCHED_SCHEME", "CPU", "last_CPU", "static_prio", "prio",
            "exec_time");
-    for (int i = 0; i < NUM_CPU; i++)
-        for (int j = 0; j < NUM_QUEUE; j++) {
+    for (int i = 0; i < N_CPU; i++)
+        for (int j = 0; j < N_QUEUE; j++) {
             queue = RQ_snapshot[i][j];
             for (int k = queue.out; k < queue.in; k++) {
                 process = queue.pool[k];
@@ -268,7 +275,7 @@ void *consumer(void *arg)
     struct process_t *process;
     printf("[CPU %i]: CPU %i thread has been created.\n", CPU, CPU);
     while (running) {
-        for (int i = 0; i < NUM_QUEUE; i++) { /* go through each queue */
+        for (int i = 0; i < N_QUEUE; i++) { /* go through each queue */
             while (running) { /* continuously executes processes in queue */
                 /* take a process out of the queue */
                 pthread_mutex_lock(&QM[CPU][i]);
@@ -476,13 +483,13 @@ void *balancer(void *arg)
         /* update the b_value */
         /* b_value is the number of processes each CPU should have so that
         ** processes are distributed equally to all CPUs */
-        b_value = n_process / NUM_CPU;
-        for (int i = 0; i < NUM_CPU; i++) {
+        b_value = n_process / N_CPU;
+        for (int i = 0; i < N_CPU; i++) {
             while (p_count[i] > b_value) { /* more than b_value processes */
                 /* take out one process from the CPU's queue */
                 process = NULL;
                 int j = 0;
-                for (j = NUM_QUEUE - 1; j >= 0; j--) {
+                for (j = N_QUEUE - 1; j >= 0; j--) {
                     pthread_mutex_lock(&QM[i][j]);
                     process = take(&RQ[i][j]);
                     pthread_mutex_unlock(&QM[i][j]);
@@ -499,12 +506,12 @@ void *balancer(void *arg)
                     break;
 
                 /* find a CPU to move the process over */
-                for (j = 0; j < NUM_CPU; j++) {
+                for (j = 0; j < N_CPU; j++) {
                     if (j != i && p_count[j] < b_value)
                         break;
                 }
                 /* if cannot find any available cpu, then break */
-                if (j == NUM_CPU || p_count[j] >= b_value) {
+                if (j == N_CPU || p_count[j] >= b_value) {
                     /* put back the process into the queue */
                     pthread_mutex_lock(&QM[i][current_queue]);
                     append(process, &RQ[i][current_queue]);

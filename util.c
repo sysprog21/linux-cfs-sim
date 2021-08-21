@@ -1,6 +1,6 @@
 #include "util.h"
 
-// Function to check priority and place element
+/* Function to check priority and place element */
 static void check(struct process_t *process, struct queue_t *queue);
 
 /* Initialize the process queue before using */
