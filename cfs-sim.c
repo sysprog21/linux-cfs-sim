@@ -108,7 +108,7 @@ static void process_status(void)
 void *producer(void *arg)
 {
     char line[100]; /* one line of the text file */
-    int CPU;
+    int cpu;
 
     printf("[producer]: Producer has been created.\n");
     printf("[producer]: Loading processes. Please wait a few secs....\n");
@@ -164,24 +164,24 @@ void *producer(void *arg)
         /* find an available CPU to assign the process into */
         do {
             srand(time(NULL));  /* seed the random generator */
-            CPU = (rand() % 4); /* generate a random CPU number 0 - 3 */
-        } while (p_count[CPU] >= b_value);
+            cpu = (rand() % 4); /* generate a random CPU number 0 - 3 */
+        } while (p_count[cpu] >= b_value);
 
         /* assign the process into the CPU queue */
-        proc.last_cpu = CPU;
+        proc.last_cpu = cpu;
 
         /* If process is SCHED_NORMAL, then store in RQ1. */
         if (proc.sched == NORMAL) {
-            pthread_mutex_lock(&qlock[CPU][1]);
-            append(&proc, &RQ[CPU][1]);
-            pthread_mutex_unlock(&qlock[CPU][1]);
+            pthread_mutex_lock(&qlock[cpu][1]);
+            append(&proc, &RQ[cpu][1]);
+            pthread_mutex_unlock(&qlock[cpu][1]);
         } else { /* store process in RQ0 */
-            pthread_mutex_lock(&qlock[CPU][0]);
-            append(&proc, &RQ[CPU][0]);
-            pthread_mutex_unlock(&qlock[CPU][0]);
+            pthread_mutex_lock(&qlock[cpu][0]);
+            append(&proc, &RQ[cpu][0]);
+            pthread_mutex_unlock(&qlock[cpu][0]);
         }
 
-        p_count[CPU]++; /* increase the number of processes for that CPU */
+        p_count[cpu]++; /* increase the number of processes for that CPU */
     }
     process_status();
     sleep(2);
@@ -189,24 +189,24 @@ void *producer(void *arg)
 }
 
 /* called by the CPU to execute a SCHED_FIFO process */
-static void execute_FIFO(int CPU, struct process_t *proc)
+static void execute_FIFO(int cpu, struct process_t *proc)
 {
     /* a FIFO process run to completion */
-    printf("[CPU %d]: executing PID %d, %s.\n", CPU, proc->pid,
+    printf("[CPU %d]: executing PID %d, %s.\n", cpu, proc->pid,
            sched_to_str[proc->sched]);
     usleep(proc->exec_time * 1000);
-    printf("[CPU %d]: PID %d is finished.\n", CPU, proc->pid);
+    printf("[CPU %d]: PID %d is finished.\n", cpu, proc->pid);
     process_status();
 
     /* update counters */
-    p_count[CPU]--; /* reduce number of processes this CPU has */
-    n_process--;    /* reduce total number of processes still in the queue */
+    p_count[cpu]--; /* decrement number of processes this CPU has */
+    n_process--;    /* decrement total number of processes still in the queue */
 }
 
 /* called by the CPU to execute a SCHED_RR process */
-static void execute_RR(int CPU, struct process_t *proc)
+static void execute_RR(int cpu, struct process_t *proc)
 {
-    printf("[CPU %d]: executing PID %d, %s.\n", CPU, proc->pid,
+    printf("[CPU %d]: executing PID %d, %s.\n", cpu, proc->pid,
            sched_to_str[proc->sched]);
 
     /* Calculate timeslice for the process */
@@ -227,25 +227,25 @@ static void execute_RR(int CPU, struct process_t *proc)
         printf(
             "[CPU %d]: PID %d is preempted. Remaining execution time = "
             "%d.\n",
-            CPU, proc->pid, proc->exec_time - proc->accu_time_slice);
+            cpu, proc->pid, proc->exec_time - proc->accu_time_slice);
 
         /* Put back the process into the queue RQ0 */
-        pthread_mutex_lock(&qlock[CPU][0]);
-        append(proc, &RQ[CPU][0]);
-        pthread_mutex_unlock(&qlock[CPU][0]);
+        pthread_mutex_lock(&qlock[cpu][0]);
+        append(proc, &RQ[cpu][0]);
+        pthread_mutex_unlock(&qlock[cpu][0]);
     } else {
         usleep((remaining_exec_time + sleep_time) * 1000);
-        printf("[CPU %d]: PID %d is finished.\n", CPU, proc->pid);
+        printf("[CPU %d]: PID %d is finished.\n", cpu, proc->pid);
         process_status();
 
         /* update counters */
-        p_count[CPU]--; /* reduce number of processes this CPU has */
+        p_count[cpu]--; /* reduce number of processes this CPU has */
         n_process--; /* reduce total number of processes still in the queue */
     }
 }
 
 /* called by the CPU to execute a SCHED_NORMAL process */
-static void execute_NORMAL(int CPU, struct process_t *proc)
+static void execute_NORMAL(int cpu, struct process_t *proc)
 {
     struct timeval t1, t2;
 
@@ -282,7 +282,7 @@ static void execute_NORMAL(int CPU, struct process_t *proc)
     int service_time = 10 + (rand() % (proc->time_slice - 9));
 
     /* execute process */
-    printf("[CPU %d]: executing PID %d, %s, service_time = %d.\n", CPU,
+    printf("[CPU %d]: executing PID %d, %s, service_time = %d.\n", cpu,
            proc->pid, sched_to_str[proc->sched], service_time);
     if (remaining_exec_time > service_time) {
         /* Record the time before executing the process */
@@ -308,33 +308,33 @@ static void execute_NORMAL(int CPU, struct process_t *proc)
 
         /* if the process is waiting for I/O event */
         if (service_time < proc->time_slice) {
-            printf("[CPU %d]: PID %d is blocked waiting for an event.\n", CPU,
+            printf("[CPU %d]: PID %d is blocked waiting for an event.\n", cpu,
                    proc->pid);
             usleep(wait_time * 1000); /* simulate the blocked time */
         }
         printf(
             "[CPU %d]: PID %d is preempted. Remaining execution time = "
             "%d.\n",
-            CPU, proc->pid, proc->exec_time - proc->accu_time_slice);
+            cpu, proc->pid, proc->exec_time - proc->accu_time_slice);
 
         /* Put back the process into the queue */
         if (proc->prio < 130) { /* if prio < 130, process go to queue 1 */
-            pthread_mutex_lock(&qlock[CPU][1]);
-            append(proc, &RQ[CPU][1]);
-            pthread_mutex_unlock(&qlock[CPU][1]);
+            pthread_mutex_lock(&qlock[cpu][1]);
+            append(proc, &RQ[cpu][1]);
+            pthread_mutex_unlock(&qlock[cpu][1]);
         } else { /* if prio >= 130, process go to queue 2 */
-            pthread_mutex_lock(&qlock[CPU][2]);
-            append(proc, &RQ[CPU][2]);
-            pthread_mutex_unlock(&qlock[CPU][2]);
+            pthread_mutex_lock(&qlock[cpu][2]);
+            append(proc, &RQ[cpu][2]);
+            pthread_mutex_unlock(&qlock[cpu][2]);
         }
     } else {
         usleep((remaining_exec_time + sleep_time) * 1000);
-        printf("[CPU %d]: PID %d is finished.\n", CPU, proc->pid);
+        printf("[CPU %d]: PID %d is finished.\n", cpu, proc->pid);
         process_status();
 
         /* update counters */
-        p_count[CPU]--; /* reduce number of processes this CPU has */
-        n_process--;    /* reduce total number of processes still in queue */
+        p_count[cpu]--; /* decrement number of processes this CPU has */
+        n_process--;    /* decrement total number of processes still in queue */
     }
 }
 
@@ -346,43 +346,43 @@ static void execute_NORMAL(int CPU, struct process_t *proc)
  */
 void *consumer(void *arg)
 {
-    int CPU = *(int *) arg; /* CPU number assigned from for this consumer */
+    int cpu = *(int *) arg; /* CPU number assigned from for this consumer */
     struct process_t *proc;
 
-    printf("[CPU %i]: CPU %i thread has been created.\n", CPU, CPU);
+    printf("[CPU %d]: thread has been created.\n", cpu);
     while (running) {
         for (int i = 0; i < N_QUEUE; i++) { /* go through each queue */
             if (!running)
                 break;
 
             /* take a process out of the queue */
-            pthread_mutex_lock(&qlock[CPU][i]);
-            proc = take(&RQ[CPU][i]);
-            pthread_mutex_unlock(&qlock[CPU][i]);
+            pthread_mutex_lock(&qlock[cpu][i]);
+            proc = take(&RQ[cpu][i]);
+            pthread_mutex_unlock(&qlock[cpu][i]);
 
             /* go to next queue if there is no more process in queue */
             if (!proc)
                 break;
 
             /* print out process info */
-            printf("[CPU %d]: PID %d is selected,%s, priority = %d.\n", CPU,
+            printf("[CPU %d]: PID %d is selected,%s, priority = %d.\n", cpu,
                    proc->pid, sched_to_str[proc->sched], proc->prio);
 
             /* execute the process based on its scheduling policy */
             switch (proc->sched) {
             case FIFO: /* SCHED_FIFO */
-                execute_FIFO(CPU, proc);
+                execute_FIFO(cpu, proc);
                 break;
             case RR: /* SCHED_RR */
-                execute_RR(CPU, proc);
+                execute_RR(cpu, proc);
                 break;
             case NORMAL: /* SCHED_NORMAL */
-                execute_NORMAL(CPU, proc);
+                execute_NORMAL(cpu, proc);
                 break;
             default: /* invalid process */
                 printf(
                     "[CPU %d]: PROCESS PID %d has invalid scheduling policy.\n",
-                    CPU, proc->pid);
+                    cpu, proc->pid);
             }
         }
     }

@@ -1,5 +1,5 @@
-#include <stddef.h>
 #include "util.h"
+#include <stddef.h>
 
 /* Initialize the process queue before using */
 void init_queue(queue_t *queue)
