@@ -13,18 +13,22 @@
 
 #include "util.h"
 
+/* Configurations */
 #define PROCESS_FILE "processes.txt"
-#define N_CPU 4   /* number of CPUs or consumers */
-#define N_QUEUE 3 /* number of RQs */
+#define N_CPU 4 /* number of CPUs or consumers */
+#define N_RQ 3  /* number of runqueue (RQ)  */
 
-/* 1200 ms a process wait for I/O operation (or event) */
-#define wait_time 1200
+/* a process wait for I/O operation (or event), in ms */
+#define WAIT_TIME 1200
 
-/* 1000 ms artificial sleep time to make output readable */
-#define sleep_time 1000
+/* the artificial sleep time to make output readable, in ms */
+#define SLEEP_TIME 1000
 
-#define MAX_SLEEP_AVG 10 /* maximum sleep average time */
-#define b_freq 2         /* frequency of the balancer */
+/* maximum sleep average time */
+#define MAX_SLEEP_AVG 10
+
+/* interval between each load balancer, in second */
+#define BALANCER_INTERVAL 2
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
@@ -41,8 +45,8 @@
  *
  * E.g., RQ[0,1] -> RQ1 of CPU0
  */
-static queue_t RQ[N_CPU][N_QUEUE];
-static pthread_mutex_t qlock[N_CPU][N_QUEUE]; /* mutex for each queue */
+static queue_t RQ[N_CPU][N_RQ];
+static pthread_mutex_t qlock[N_CPU][N_RQ]; /* mutex for each queue */
 
 /* string representation of scheduling policy */
 static const char *sched_to_str[] = {"SCHED_RR", "SCHED_FIFO", "SCHED_NORMAL"};
@@ -80,7 +84,7 @@ static struct process_t desc2proc(char *line)
 /* Print out to the console the table containing all processes */
 static void process_status(void)
 {
-    queue_t RQ_snapshot[N_CPU][N_QUEUE];
+    queue_t RQ_snapshot[N_CPU][N_RQ];
 
     /* take a snapshot of the queues */
     memcpy(&RQ_snapshot, &RQ, sizeof(RQ));
@@ -88,7 +92,7 @@ static void process_status(void)
            "SCHED_SCHEME", "CPU", "last_CPU", "static_prio", "prio",
            "exec_time");
     for (int i = 0; i < N_CPU; i++)
-        for (int j = 0; j < N_QUEUE; j++) {
+        for (int j = 0; j < N_RQ; j++) {
             queue_t queue = RQ_snapshot[i][j];
             for (int k = queue.out; k < queue.in; k++) {
                 struct process_t proc = queue.pool[k];
@@ -138,7 +142,7 @@ void *producer(void *arg)
 
     /* Initialize the queue for each CPU */
     for (int i = 0; i < N_CPU; i++) {
-        for (int j = 0; j < N_QUEUE; j++) {
+        for (int j = 0; j < N_RQ; j++) {
             init_queue(&RQ[i][j]);
             if (pthread_mutex_init(&qlock[i][j], NULL) != 0) {
                 fprintf(stderr, "[Producer]: Mutex initialization failed.\n");
@@ -223,7 +227,7 @@ static void execute_RR(int cpu, struct process_t *proc)
 
     /* execute process */
     if (remaining_exec_time > proc->time_slice) {
-        usleep((proc->time_slice + sleep_time) * 1000);
+        usleep((proc->time_slice + SLEEP_TIME) * 1000);
         printf(
             "[CPU %d]: PID %d is preempted. Remaining execution time = "
             "%d.\n",
@@ -234,7 +238,7 @@ static void execute_RR(int cpu, struct process_t *proc)
         append(proc, &RQ[cpu][0]);
         pthread_mutex_unlock(&qlock[cpu][0]);
     } else {
-        usleep((remaining_exec_time + sleep_time) * 1000);
+        usleep((remaining_exec_time + SLEEP_TIME) * 1000);
         printf("[CPU %d]: PID %d is finished.\n", cpu, proc->pid);
         process_status();
 
@@ -289,7 +293,7 @@ static void execute_NORMAL(int cpu, struct process_t *proc)
         gettimeofday(&t1, NULL);
 
         /* execute the process */
-        usleep((service_time + sleep_time) * 1000);
+        usleep((service_time + SLEEP_TIME) * 1000);
 
         /* Record the time after executing the process */
         gettimeofday(&t2, NULL);
@@ -300,7 +304,7 @@ static void execute_NORMAL(int cpu, struct process_t *proc)
         /* Calculate the execution time */
         deltaT =
             (t2.tv_sec - t1.tv_sec) * 1000 + (t2.tv_usec - t1.tv_usec) / 1000;
-        deltaT = deltaT - sleep_time; /* substract artificial sleep_time */
+        deltaT = deltaT - SLEEP_TIME; /* substract artificial SLEEP_TIME */
         ticks = deltaT / 100;
 
         /* Substract the ticks from sleep_avg */
@@ -310,7 +314,7 @@ static void execute_NORMAL(int cpu, struct process_t *proc)
         if (service_time < proc->time_slice) {
             printf("[CPU %d]: PID %d is blocked waiting for an event.\n", cpu,
                    proc->pid);
-            usleep(wait_time * 1000); /* simulate the blocked time */
+            usleep(WAIT_TIME * 1000); /* simulate the blocked time */
         }
         printf(
             "[CPU %d]: PID %d is preempted. Remaining execution time = "
@@ -328,7 +332,7 @@ static void execute_NORMAL(int cpu, struct process_t *proc)
             pthread_mutex_unlock(&qlock[cpu][2]);
         }
     } else {
-        usleep((remaining_exec_time + sleep_time) * 1000);
+        usleep((remaining_exec_time + SLEEP_TIME) * 1000);
         printf("[CPU %d]: PID %d is finished.\n", cpu, proc->pid);
         process_status();
 
@@ -337,7 +341,6 @@ static void execute_NORMAL(int cpu, struct process_t *proc)
         n_process--;    /* decrement total number of processes still in queue */
     }
 }
-
 
 /* Consumer implementation.
  * When created, the *arg tell the thread its CPU number (From 0 to 3)
@@ -351,7 +354,7 @@ void *consumer(void *arg)
 
     printf("[CPU %d]: thread has been created.\n", cpu);
     while (running) {
-        for (int i = 0; i < N_QUEUE; i++) { /* go through each queue */
+        for (int i = 0; i < N_RQ; i++) { /* go through each queue */
             if (!running)
                 break;
 
@@ -397,8 +400,7 @@ void *balancer(void *arg)
     printf("[balancer]: Balancer has been created.\n");
     while (running) {
         if (n_process <= 0) { /* check if there are no more process */
-            printf(
-                "[Balancer] No more process to execute. The emulator stop.\n");
+            printf("[Balancer] No more process to execute. Stop.\n");
             running = false;
             break;
         }
@@ -413,7 +415,7 @@ void *balancer(void *arg)
                 struct process_t *proc = NULL;
 
                 int j = 0;
-                for (j = N_QUEUE - 1; j >= 0; j--) {
+                for (j = N_RQ - 1; j >= 0; j--) {
                     pthread_mutex_lock(&qlock[i][j]);
                     proc = take(&RQ[i][j]);
                     pthread_mutex_unlock(&qlock[i][j]);
@@ -473,7 +475,7 @@ void *balancer(void *arg)
                 p_count[new_cpu]++;
             }
         }
-        sleep(b_freq);
+        sleep(BALANCER_INTERVAL);
     }
     pthread_exit(NULL);
 }

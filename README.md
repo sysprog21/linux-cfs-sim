@@ -16,16 +16,16 @@ Note:
 A set of 20 processes are specified in file `processes.txt`.
 You can add or modify processes by editing this file
 
-### Balancer
-The balancer are triggered every 2 seconds by means of `sleep` call.
-You can change that by changing the macro `b_freq` (frequency of the balancer).
+### Load Balancer
+The load balancer are triggered every 2 seconds.
+You can change that by changing the macro `BALANCER_INTERVAL`.
 
 ### Finish
 When there is no more process to execute, the balancer will stop the
 simulator by setting `running` to 0.
 
 ### Slow down the print out
-You can slow down the printing by adjusting the macro `sleep_time`.
+You can slow down the printing by adjusting the macro `SLEEP_TIME`.
 
 ## License
 
